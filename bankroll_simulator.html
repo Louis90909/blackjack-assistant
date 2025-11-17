@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Assistant de Table — Blackjack (+ opina + RAG)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root{ --felt1:#004400; --felt2:#001100; --gold:#d4af37; --panel:#1e1e1e; --text:#fff; --muted:#bdbdbd; --good:#16a34a; --bad:#dc2626; --warn:#f59e0b; --neon:#7c3aed; }
+  *{ box-sizing:border-box } body{ margin:0; font-family:'Rajdhani',system-ui,Segoe UI,Roboto,sans-serif; background: radial-gradient(circle at 50% 30%, var(--felt1), var(--felt2)); color:var(--text); text-align:center; min-height:100vh; }
+  h1{ font-weight:700; letter-spacing:1px; margin:16px 0 6px }
+  .wrap{ max-width:1100px; margin:0 auto; padding:16px; }
+  .grid{ display:grid; grid-template-columns: 1.1fr 0.9fr; gap:16px; } @media (max-width: 980px){ .grid{ grid-template-columns:1fr; } }
+  .card{ background:#111c; border:2px solid var(--gold); border-radius:14px; padding:16px; box-shadow: 0 0 24px rgba(212,175,55,0.22); }
+  .panel{ background:var(--panel); border:2px solid var(--gold); border-radius:12px; padding:12px; }
+  label{ font-size:14px; color:var(--muted); display:block; margin-bottom:6px; text-align:left }
+  select, input, button, textarea{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid #333; background:#111; color:#fff; }
+  textarea{ min-height:120px }
+  .row{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:10px; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  @media (max-width: 720px){ .row,.row2,.row3{ grid-template-columns:1fr; } }
+  button{ cursor:pointer; font-weight:700; letter-spacing:0.3px; color:#111; }
+  .btn-main{ background:linear-gradient(90deg, gold, orange); border:none }
+  .btn-ghost{ background:#222; color:#fff; border:1px solid #333 }
+  .btn-main:hover{ background:linear-gradient(90deg, orange, gold) } .btn-ghost:hover{ background:#333 }
+  .table-area{ display:grid; grid-template-columns:auto auto; justify-content:center; gap:14px; margin-top:6px }
+  .cardface{ width:68px; height:96px; background:#fff; color:#111; border-radius:8px; border:2px solid #0004; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; box-shadow:0 6px 20px rgba(0,0,0,0.25); }
+  .dealer-tag, .player-tag{ font-size:13px; color:var(--muted); margin-top:4px }
+  .gold{ color:var(--gold) }
+  .action-call{ font-size:32px; font-weight:800; margin:8px 0 4px; text-shadow:0 2px 10px rgba(0,0,0,0.5); }
+  .action-HIT{ color:#38bdf8 } .action-STAND{ color:#93c5fd } .action-DOUBLE{ color:#22c55e } .action-SPLIT{ color:#eab308 } .action-SURRENDER{ color:#ef4444 }
+  .evbar{ height:12px; width:100%; background:#222; border-radius:6px; overflow:hidden; border:1px solid #444 }
+  .evbar-fill{ height:100%; width:50%; background:linear-gradient(90deg, #ef4444, #22c55e) }
+  .muted{ color:var(--muted); font-size:14px }
+  .stats-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:8px 0 } @media (max-width: 720px){ .stats-row{ grid-template-columns:1fr 1fr } }
+  .stat{ background:#111; border:1px dashed #333; border-radius:10px; padding:8px; }
+  .big{ font-size:20px; font-weight:700 }
+  .badge{ display:inline-block; padding:4px 8px; border-radius:999px; font-weight:700 }
+  .b-win{ background:#083c11; color:#bbf7d0; border:1px solid #14532d } .b-loss{ background:#3f0b0b; color:#fecaca; border:1px solid #7f1d1d } .b-push{ background:#1e293b; color:#cbd5e1; border:1px solid #334155 }
+  .footer-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px }
+  canvas{ background:#0005; border-radius:10px; border:1px solid #333 }
+  .ok{ color:#16a34a } .err{ color:#ef4444 }
+  /* Neon RAG */
+  .rag-ind{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; border:1px solid var(--neon); color:#fff; background:#2e1b4bAA; box-shadow: 0 0 14px rgba(124,58,237,0.6); }
+  .rag-dot{ width:10px; height:10px; border-radius:999px; background: #7c3aed; box-shadow: 0 0 10px #7c3aed; }
+  .src-tag{ display:inline-block; margin:2px 4px 0 0; padding:2px 6px; border-radius:6px; background:#2a2a2a; border:1px solid #444; font-size:12px }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎰 Assistant de Table <span class="gold">Blackjack</span> <small style="font-size:14px;color:#bbb">(+ opina + RAG)</small></h1>
+    <div class="muted">Choisis ta main + la carte du croupier → <b>Hit / Stand / Double / Split / Surrender</b>, **probabilités & EV** (Monte-Carlo).<br/>“opina” pour l’explication, **RAG** pour citer ta base connaissances.</div>
+
+    <div class="grid" style="margin-top:14px">
+      <!-- COLONNE GAUCHE : Plateau & Entrée -->
+      <div class="card">
+        <h2 style="margin:0 0 10px">Plateau</h2>
+
+        <!-- Sélecteurs -->
+        <div class="panel" style="margin-bottom:10px">
+          <div class="row3">
+            <div>
+              <label>🃏 Ta carte 1</label>
+              <select id="player-card1"></select>
+            </div>
+            <div>
+              <label>🃏 Ta carte 2</label>
+              <select id="player-card2"></select>
+            </div>
+            <div>
+              <label>💀 Carte du croupier</label>
+              <select id="dealer-card"></select>
+            </div>
+          </div>
+          <div class="row2" style="margin-top:8px">
+            <button id="analyze-btn" class="btn-main">Analyser</button>
+            <button id="newhand-btn" class="btn-ghost">Nouvelle main</button>
+          </div>
+        </div>
+
+        <!-- Visual cartes -->
+        <div class="table-area">
+          <div>
+            <div class="cardface" id="p1face">?</div>
+            <div class="cardface" id="p2face">?</div>
+            <div class="player-tag">Ta main</div>
+          </div>
+          <div>
+            <div class="cardface" id="dealerface">?</div>
+            <div class="dealer-tag">Croupier (visible)</div>
+          </div>
+        </div>
+
+        <!-- Boutons simu -->
+        <div class="footer-actions">
+          <div style="min-width:180px">
+            <label>Nombre de parties à simuler</label>
+            <input id="simN" type="number" value="10000" min="1000" step="1000">
+          </div>
+          <button id="simulate-btn" class="btn-main">Simuler</button>
+          <button id="clear-chart" class="btn-ghost">Effacer l'histogramme</button>
+        </div>
+      </div>
+
+      <!-- COLONNE DROITE : Analyse -->
+      <div class="card">
+        <h2 style="margin:0 0 10px">Analyse</h2>
+
+        <div class="panel" style="margin-bottom:10px">
+          <div id="actionCall" class="action-call">—</div>
+          <div class="evbar"><div id="evbarFill" class="evbar-fill" style="width:50%"></div></div>
+          <div class="muted" id="evLabel" style="margin-top:6px">EV ~ 0.00 unités</div>
+        </div>
+
+        <div class="panel" style="margin-bottom:10px">
+          <div class="stats-row">
+            <div class="stat"><div class="muted">Total</div><div class="big" id="totalTxt">—</div></div>
+            <div class="stat"><div class="muted">Soft ?</div><div class="big" id="softTxt">—</div></div>
+            <div class="stat"><div class="muted">Pair ?</div><div class="big" id="pairTxt">—</div></div>
+            <div class="stat"><div class="muted">BJ naturel ?</div><div class="big" id="bjTxt">—</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:8px">
+            <span class="badge b-win">Win <span id="pWin">—</span>%</span>
+            <span class="badge b-loss">Loss <span id="pLoss">—</span>%</span>
+            <span class="badge b-push">Push <span id="pPush">—</span>%</span>
+          </div>
+          <canvas id="histChart" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE OPINA + RAG -->
+    <div class="card" style="margin-top:16px">
+      <h2 style="margin:0 0 10px">🧠 IA “opina” + 📚 RAG</h2>
+
+      <div class="panel" style="margin-bottom:12px">
+        <div class="row3">
+          <div>
+            <label>Clé OpenAI (sk-…)</label>
+            <input id="openaiKey" type="password" placeholder="Colle ta clé ici (optionnel)">
+          </div>
+          <div>
+            <label>Modèle (chat)</label>
+            <input id="openaiModel" value="gpt-4o-mini">
+          </div>
+          <div>
+            <label>Langue</label>
+            <select id="llmLang">
+              <option value="fr" selected>Français</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- RAG panel -->
+      <div class="panel" style="margin-bottom:12px">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:space-between">
+          <div style="display:flex; align-items:center; gap:10px">
+            <div id="ragBadge" class="rag-ind" title="RAG activé quand une base est chargée" style="opacity:.5">
+              <span class="rag-dot"></span> <b>RAG</b> inactif
+            </div>
+          </div>
+          <div class="row3" style="flex:1; margin-left:10px">
+            <div>
+              <label>📁 Charger base (.txt/.md/.json)</label>
+              <input id="ragFile" type="file" accept=".txt,.md,.json">
+            </div>
+            <div>
+              <label>k passages (top-k)</label>
+              <input id="ragTopK" type="number" value="4" min="1" max="10">
+            </div>
+            <div style="display:flex; gap:8px; align-items:end">
+              <button id="loadRag" class="btn-ghost">Charger / Re-embarquer</button>
+              <span id="ragStatus" class="muted">Aucune base</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row2">
+          <button id="askLLM" class="btn-main">Analyser avec l’IA (utilise RAG si chargé)</button>
+          <span id="llmStatus" class="muted"></span>
+        </div>
+        <textarea id="llmOutput" placeholder="Le modèle expliquera ici la recommandation (avec passages de la base si RAG activé)."></textarea>
+        <div id="ragSources" class="muted" style="text-align:left; margin-top:6px"></div>
+      </div>
+
+      <p class="muted" style="margin-top:8px">La clé n’est pas stockée. L’appel part directement vers l’API OpenAI. Pour cacher la clé, utilise un micro-proxy serveur.</p>
+    </div>
+
+    <p class="muted" style="margin-top:10px">
+      Règles simulées : sabot infini, S17, BJ 3:2, pas d’assurance. “Double” = 1 carte; “Split” sans resplit, stratégie de base ensuite.
+    </p>
+  </div>
+
+<script>
+/* ========== Helpers UI & Data ========= */
+const $ = id => document.getElementById(id);
+const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+function fillSelect(sel){ sel.innerHTML = ranks.map(r=>`<option value="${r}">${r}</option>`).join(''); }
+fillSelect($('player-card1')); fillSelect($('player-card2')); fillSelect($('dealer-card'));
+$('player-card1').value='A'; $('player-card2').value='8'; $('dealer-card').value='6'; updateFaces();
+
+function cardVal(rank){ if(rank==='A') return 11; if(['J','Q','K'].includes(rank)) return 10; return parseInt(rank,10); }
+function handTotal(cards){ let total=0, aces=0; for(const r of cards){ if(r==='A'){ aces++; total+=11; } else total+=cardVal(r); } while(total>21 && aces>0){ total-=10; aces--; } return { total, soft: aces>0 }; }
+function isPair(c1,c2){ return c1===c2; }
+function isBlackjack(c1,c2){ const set=[c1,c2]; return set.includes('A') && ['10','J','Q','K'].some(x=>set.includes(x)); }
+
+/* ========= Stratégie de base S17, 3:2 (simplifiée) ========= */
+function recBasic(c1,c2, dealer){
+  const { total, soft } = handTotal([c1,c2]);
+  if(!soft && total===16 && ['9','10','J','Q','K','A'].includes(dealer)) return 'SURRENDER';
+  if(!soft && total===15 && ['10','J','Q','K'].includes(dealer)) return 'SURRENDER';
+  if(c1===c2){
+    const r=c1;
+    if(r==='A'||r==='8') return 'SPLIT';
+    if(['10','J','Q','K'].includes(r)) return 'STAND';
+    if(r==='9'){ if(['2','3','4','5','6','8','9'].includes(dealer)) return 'SPLIT'; else return 'STAND'; }
+    if(r==='7'){ if(['2','3','4','5','6','7'].includes(dealer)) return 'SPLIT'; else return 'HIT'; }
+    if(r==='6'){ if(['2','3','4','5','6'].includes(dealer)) return 'SPLIT'; else return 'HIT'; }
+    if(r==='5'){ if(['2','3','4','5','6','7','8','9'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+    if(r==='4'){ if(['5','6'].includes(dealer)) return 'SPLIT'; else return 'HIT'; }
+    if(r==='3'||r==='2'){ if(['2','3','4','5','6','7'].includes(dealer)) return 'SPLIT'; else return 'HIT'; }
+  }
+  if(soft){
+    if(total>=19) return 'STAND';
+    if(total===18){ if(['2','3','4','5','6'].includes(dealer)) return 'DOUBLE'; if(['7','8'].includes(dealer)) return 'STAND'; return 'HIT'; }
+    if(total===17){ if(['3','4','5','6'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+    if(total===16||total===15){ if(['4','5','6'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+    if(total===14||total===13){ if(['5','6'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+  }
+  if(total>=17) return 'STAND';
+  if(total<=8) return 'HIT';
+  if(total===9){ if(['3','4','5','6'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+  if(total===10){ if(['2','3','4','5','6','7','8','9'].includes(dealer)) return 'DOUBLE'; else return 'HIT'; }
+  if(total===11){ return 'DOUBLE'; }
+  if(total===12){ if(['4','5','6'].includes(dealer)) return 'STAND'; else return 'HIT'; }
+  if(total>=13 && total<=16){ if(['2','3','4','5','6'].includes(dealer)) return 'STAND'; else return 'HIT'; }
+  return 'HIT';
+}
+
+/* ========= Moteur de jeu & Monte-Carlo ========= */
+function draw(){ return ranks[Math.floor(Math.random()*ranks.length)]; }
+function dealerPlay(up, hole){
+  let cards=[up, hole]; let t=handTotal(cards);
+  while(t.total<17 || (t.total===17 && t.soft===true)){ cards.push(draw()); t=handTotal(cards); }
+  return { cards, ...t };
+}
+function resolveOutcome(playerCards, dealerUp, action){
+  const dealerHole = draw();
+  const dealerBJ = isBlackjack(dealerUp, dealerHole);
+  const playerBJ = isBlackjack(playerCards[0], playerCards[1]);
+  if(playerBJ || dealerBJ){ if(playerBJ && dealerBJ) return 0; if(playerBJ) return 1.5; if(dealerBJ) return -1; }
+  if(action==='SURRENDER') return -0.5;
+  function playFinalHand(hand){
+    let cards=[...hand];
+    if(action==='DOUBLE'){ cards.push(draw()); const pt=handTotal(cards); return {total:pt.total,bust:pt.total>21,doubled:true}; }
+    if(action==='STAND'){ const pt=handTotal(cards); return {total:pt.total,bust:pt.total>21}; }
+    if(action==='HIT'){
+      cards.push(draw()); let pt=handTotal(cards);
+      if(pt.total>21) return {total:pt.total,bust:true};
+      let next=recBasic(cards[cards.length-2], cards[cards.length-1], dealerUp);
+      while(next==='HIT'){ cards.push(draw()); pt=handTotal(cards); if(pt.total>21) return {total:pt.total,bust:true}; next=recBasic(cards[cards.length-2], cards[cards.length-1], dealerUp); }
+      return {total:pt.total,bust:false};
+    }
+    // fallback: suivre table
+    let next=recBasic(cards[0], cards[1], dealerUp);
+    if(next==='STAND'){ const pt=handTotal(cards); return {total:pt.total,bust:pt.total>21}; }
+    if(next==='DOUBLE'){ cards.push(draw()); const pt=handTotal(cards); return {total:pt.total,bust:pt.total>21,doubled:true}; }
+    while(true){ cards.push(draw()); const pt=handTotal(cards); if(pt.total>21) return {total:pt.total,bust:true}; next=recBasic(cards[cards.length-2], cards[cards.length-1], dealerUp); if(next!=='HIT') return {total:pt.total,bust:false}; }
+  }
+  if(action==='SPLIT' && playerCards[0]===playerCards[1]){
+    const h1=[playerCards[0], draw()], h2=[playerCards[1], draw()];
+    const r1=playFinalHand(h1), r2=playFinalHand(h2);
+    const d=dealerPlay(dealerUp, dealerHole);
+    const settle=(res)=>{ if(res.bust) return -1; if(d.total>21) return +1*(res.doubled?2:1); if(res.total>d.total) return +1*(res.doubled?2:1); if(res.total<d.total) return -1*(res.doubled?2:1); return 0; };
+    return settle(r1)+settle(r2);
+  }
+  const res=playFinalHand(playerCards); const d=dealerPlay(dealerUp, dealerHole);
+  if(res.bust) return -1*(res.doubled?2:1);
+  if(d.total>21) return +1*(res.doubled?2:1);
+  if(res.total>d.total) return +1*(res.doubled?2:1);
+  if(res.total<d.total) return -1*(res.doubled?2:1);
+  return 0;
+}
+function simulate(c1,c2, dealer, action, N){
+  let wins=0, losses=0, pushes=0, sumEV=0; const outcomes=[];
+  for(let i=0;i<N;i++){
+    const ev = resolveOutcome([c1,c2], dealer, action);
+    outcomes.push(ev); sumEV += ev;
+    if(ev>0) wins++; else if(ev<0) losses++; else pushes++;
+  }
+  return { win:(wins/N*100), loss:(losses/N*100), push:(pushes/N*100), ev:sumEV/N, outcomes };
+}
+
+/* ========= Histogramme ========= */
+const hist = new Chart($('histChart').getContext('2d'), {
+  type:'bar',
+  data:{ labels:[], datasets:[{label:'Fréquence', data:[]}] },
+  options:{ responsive:true, animation:false, scales:{x:{title:{display:true,text:'Résultat (unités)'}}} }
+});
+function updateHist(values){
+  const bins=[-2,-1.5,-1,-0.5,0,1,1.5,2], counts=bins.map(()=>0);
+  values.forEach(v=>{ let idx=0,best=Infinity; for(let i=0;i<bins.length;i++){ const d=Math.abs(v-bins[i]); if(d<best){best=d; idx=i;} } counts[idx]++; });
+  hist.data.labels = bins.map(b=>b.toFixed(1)); hist.data.datasets[0].data = counts; hist.update();
+}
+
+/* ========= UI de base ========= */
+function updateFaces(){ $('p1face').textContent=$('player-card1').value; $('p2face').textContent=$('player-card2').value; $('dealerface').textContent=$('dealer-card').value; }
+['player-card1','player-card2','dealer-card'].forEach(id=>$(id).addEventListener('change', updateFaces));
+
+function analyze(){
+  const c1=$('player-card1').value, c2=$('player-card2').value, d=$('dealer-card').value;
+  const rec = recBasic(c1,c2,d), t=handTotal([c1,c2]), bj=isBlackjack(c1,c2);
+  $('totalTxt').textContent = t.total; $('softTxt').textContent = t.soft?'Oui':'Non'; $('pairTxt').textContent = (c1===c2)?'Oui':'Non'; $('bjTxt').textContent = bj?'Oui':'Non';
+  $('actionCall').textContent = rec; $('actionCall').className = `action-call action-${rec}`;
+  const quick = simulate(c1,c2,d, rec, 1000);
+  $('pWin').textContent = quick.win.toFixed(1); $('pLoss').textContent = quick.loss.toFixed(1); $('pPush').textContent = quick.push.toFixed(1);
+  const ev=quick.ev; $('evLabel').textContent = `EV estimée ~ ${ev.toFixed(3)} unités`;
+  const pct = Math.max(0, Math.min(100, 50 + ev*25*10)); $('evbarFill').style.width = pct + '%'; $('evbarFill').style.background = ev>=0 ? 'linear-gradient(90deg,#059669,#22c55e)' : 'linear-gradient(90deg,#ef4444,#f97316)';
+  return {rec, quick};
+}
+$('analyze-btn').addEventListener('click', ()=>{ const {quick}=analyze(); updateHist(quick.outcomes); });
+$('simulate-btn').addEventListener('click', ()=>{
+  const c1=$('player-card1').value, c2=$('player-card2').value, d=$('dealer-card').value;
+  const rec = $('actionCall').textContent && $('actionCall').textContent!=='—' ? $('actionCall').textContent : recBasic(c1,c2,d);
+  const N = Math.max(1000, parseInt($('simN').value)||10000);
+  const r = simulate(c1,c2,d, rec, N);
+  $('pWin').textContent=r.win.toFixed(1); $('pLoss').textContent=r.loss.toFixed(1); $('pPush').textContent=r.push.toFixed(1);
+  $('evLabel').textContent=`EV estimée (${N}) ~ ${r.ev.toFixed(3)} unités`;
+  const pct=Math.max(0,Math.min(100,50 + r.ev*25*10)); $('evbarFill').style.width=pct+'%'; $('evbarFill').style.background = r.ev>=0 ? 'linear-gradient(90deg,#059669,#22c55e)' : 'linear-gradient(90deg,#ef4444,#f97316)';
+  updateHist(r.outcomes);
+});
+$('newhand-btn').addEventListener('click', ()=>{
+  const rand=()=>ranks[Math.floor(Math.random()*ranks.length)];
+  $('player-card1').value=rand(); $('player-card2').value=rand(); $('dealer-card').value=rand(); updateFaces();
+  $('actionCall').textContent='—'; $('actionCall').className='action-call'; $('pWin').textContent='—'; $('pLoss').textContent='—'; $('pPush').textContent='—';
+  $('evLabel').textContent='EV ~ 0.00 unités'; $('evbarFill').style.width='50%'; updateHist([]); $('totalTxt').textContent='—'; $('softTxt').textContent='—'; $('pairTxt').textContent='—'; $('bjTxt').textContent='—';
+});
+$('clear-chart').addEventListener('click', ()=>updateHist([]));
+
+/* ========= OpenAI (chat) ========= */
+async function callOpenAIChat({key, model, messages}){
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${key}` },
+    body:JSON.stringify({ model: model || 'gpt-4o-mini', messages, temperature:0.2 })
+  });
+  if(!r.ok){ throw new Error(`HTTP ${r.status}: ${await r.text()}`); }
+  const data = await r.json();
+  return data.choices?.[0]?.message?.content?.trim() || '(pas de réponse)';
+}
+
+/* ========= OpenAI (embeddings) + Vector Store in-memory ========= */
+let KB = []; // [{id, text, embedding: number[]}]
+function cosine(a,b){ let s=0,na=0,nb=0; for(let i=0;i<a.length;i++){ s+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; } return s/(Math.sqrt(na)*Math.sqrt(nb)+1e-12); }
+function chunkText(txt, maxChars=800){ // simple chunker
+  const parts=[]; for(let i=0;i<txt.length;i+=maxChars){ parts.push(txt.slice(i,i+maxChars)); } return parts;
+}
+async function embedTexts({key, texts, model='text-embedding-3-small'}){
+  const r = await fetch('https://api.openai.com/v1/embeddings', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${key}` },
+    body: JSON.stringify({ model, input: texts })
+  });
+  if(!r.ok){ throw new Error(`Embeddings HTTP ${r.status}: ${await r.text()}`); }
+  const data = await r.json();
+  return data.data.map(d=>d.embedding);
+}
+async function buildKBFromFile(file, key){
+  const ext = (file.name.split('.').pop()||'txt').toLowerCase();
+  const raw = await file.text();
+  let docs=[];
+  if(ext==='json'){
+    try{
+      const js = JSON.parse(raw);
+      if(Array.isArray(js)) docs = js.map((v,i)=> (typeof v==='string'? v : JSON.stringify(v)));
+      else docs = Object.values(js).map(v=> (typeof v==='string'? v : JSON.stringify(v)));
+    }catch{ docs = [raw]; }
+  } else {
+    docs = chunkText(raw, 900); // découpe
+  }
+  const embs = await embedTexts({key, texts: docs});
+  KB = docs.map((text,i)=> ({ id:`doc_${i+1}`, text, embedding: embs[i] }));
+}
+async function searchKB({key, query, topK=4}){
+  if(KB.length===0) return [];
+  const [qEmb] = await embedTexts({key, texts:[query]});
+  const scored = KB.map(d=> ({...d, score: cosine(qEmb, d.embedding)}));
+  scored.sort((a,b)=> b.score - a.score);
+  return scored.slice(0, Math.min(topK, scored.length));
+}
+
+/* ========= RAG UI ========= */
+$('loadRag').addEventListener('click', async ()=>{
+  try{
+    const key = $('openaiKey').value.trim();
+    if(!key){ $('ragStatus').textContent='Ajoute ta clé sk-…'; $('ragStatus').className='muted err'; return; }
+    const f = $('ragFile').files?.[0];
+    if(!f){ $('ragStatus').textContent='Choisis un fichier'; $('ragStatus').className='muted err'; return; }
+    $('ragStatus').textContent='Embeddings en cours…'; $('ragStatus').className='muted';
+    await buildKBFromFile(f, key);
+    $('ragStatus').textContent=`Base chargée ✅  (${KB.length} passages)`;
+    $('ragStatus').className='muted ok';
+    const badge=$('ragBadge'); badge.style.opacity = '1'; badge.innerHTML = '<span class="rag-dot"></span> <b>RAG</b> activé';
+  }catch(e){
+    console.error(e);
+    $('ragStatus').textContent='Erreur RAG ⚠️ ' + e.message; $('ragStatus').className='muted err';
+  }
+});
+
+/* ========= Bouton IA (avec RAG si dispo) ========= */
+$('askLLM').addEventListener('click', async ()=>{
+  const key = $('openaiKey').value.trim();
+  const model = $('openaiModel').value.trim() || 'gpt-4o-mini';
+  const lang = $('llmLang').value;
+  if(!key){ $('llmStatus').textContent='Ajoute ta clé sk-…'; $('llmStatus').className='muted err'; return; }
+
+  // contexte blackjack courant
+  const c1=$('player-card1').value, c2=$('player-card2').value, d=$('dealer-card').value;
+  const recTxt = $('actionCall').textContent && $('actionCall').textContent!=='—' ? $('actionCall').textContent : recBasic(c1,c2,d);
+  const pWinTxt = $('pWin').textContent, pLossTxt=$('pLoss').textContent, pPushTxt=$('pPush').textContent, evTxt=$('evLabel').textContent.replace('EV estimée','EV');
+
+  // Requête (question implicite) + retrieval si KB
+  const userQ = lang==='fr'
+    ? `Explique et justifie l'action "${recTxt}" pour la main ${c1}+${c2} vs ${d}.`
+    : `Explain and justify "${recTxt}" for ${c1}+${c2} vs dealer ${d}.`;
+
+  let sources=[];
+  if(KB.length>0){
+    $('llmStatus').textContent = lang==='fr' ? 'RAG: recherche dans la base…' : 'RAG: searching KB…';
+    sources = await searchKB({key, query: `${c1}+${c2} vs ${d} blackjack basic strategy ${recTxt}`, topK: parseInt($('ragTopK').value)||4 });
+  }
+
+  const contextBlock = (sources.length>0)
+    ? `\n---\nCONTEXT (top ${sources.length} passages, cite si utile):\n${sources.map((s,i)=>`[S${i+1}] ${s.text}`).join('\n\n')}\n---\n`
+    : '';
+
+  const sys = lang==='fr'
+    ? "Tu es un coach de blackjack. Sois précis, concis et rigoureux (S17, 3:2, pas d’assurance). Si un CONTEXT est fourni, exploite-le et cite [S1]..[Sk] quand pertinent."
+    : "You are a blackjack coach. Be precise, concise and rigorous (S17, 3:2, no insurance). If CONTEXT is provided, use it and cite [S1]..[Sk] when relevant.";
+
+  const user = lang==='fr'
+    ? `${userQ}
+Stats rapides: Win ${pWinTxt}%, Loss ${pLossTxt}%, Push ${pPushTxt}%. ${evTxt}.
+${contextBlock}
+Tâches:
+1) Justifie en 3–5 phrases l'action ${recTxt} (hard/soft/paires).
+2) 2 pièges fréquents (cas limites).
+3) 2 tips mémo.`
+    : `${userQ}
+Quick stats: Win ${pWinTxt}%, Loss ${pLossTxt}%, Push ${pPushTxt}%. ${evTxt}.
+${contextBlock}
+Tasks:
+1) Justify in 3–5 sentences the ${recTxt} action (hard/soft/pairs).
+2) 2 common gotchas.
+3) 2 memory tips.`
+
+  try{
+    $('llmStatus').textContent = lang==='fr' ? 'Appel IA…' : 'Calling AI…';
+    $('llmStatus').className='muted';
+    const out = await callOpenAIChat({ key, model, messages:[ {role:'system', content: sys}, {role:'user', content: user} ]});
+    $('llmOutput').value = out;
+    // sources affichées
+    const srcDiv = $('ragSources');
+    if(sources.length){
+      srcDiv.innerHTML = `<span class="gold">📘 Sources utilisées :</span> ` + sources.map((s,i)=>`<span class="src-tag">[S${i+1}] ${s.id}</span>`).join(' ');
+    } else {
+      srcDiv.innerHTML = '';
+    }
+    $('llmStatus').textContent = lang==='fr' ? 'Analyse IA terminée ✅' : 'AI analysis complete ✅';
+    $('llmStatus').className='muted ok';
+  }catch(e){
+    console.error(e);
+    $('llmStatus').textContent = 'Erreur API ⚠️ ' + e.message;
+    $('llmStatus').className='muted err';
+  }
+});
+
+/* Analyse initiale auto */
+function updateFaces(){ $('p1face').textContent=$('player-card1').value; $('p2face').textContent=$('player-card2').value; $('dealerface').textContent=$('dealer-card').value; }
+function analyzeAndPlot(){ const {quick}=analyze(); updateHist(quick.outcomes); }
+function init(){ analyzeAndPlot(); }
+init();
+</script>
+</body>
+</html>
